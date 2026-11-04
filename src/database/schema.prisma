@@ -1,0 +1,196 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  SUPER_ADMIN
+  ORG_ADMIN
+  SALES_REP
+  VIEWER
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+enum ChannelType {
+  EMAIL
+  LINKEDIN_MESSAGE
+  LINKEDIN_CONNECT
+  CALL
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  OPENED
+  REPLIED
+  BOUNCED
+  CONVERTED
+  UNSUBSCRIBED
+}
+
+enum MessageStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  OPENED
+  CLICKED
+  REPLIED
+  BOUNCED
+  FAILED
+}
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  domain    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users         User[]
+  leads         Lead[]
+  campaigns     Campaign[]
+  emailAccounts EmailAccount[]
+}
+
+model User {
+  id             String       @id @default(uuid())
+  organizationId String
+  email          String       @unique
+  passwordHash   String
+  firstName      String
+  lastName       String
+  role           Role         @default(SALES_REP)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaigns      Campaign[]
+
+  @@index([organizationId])
+}
+
+model EmailAccount {
+  id             String       @id @default(uuid())
+  organizationId String
+  email          String
+  senderName     String
+  smtpHost       String
+  smtpPort       Int
+  smtpUser       String
+  smtpPass       String
+  dailyLimit     Int          @default(100)
+  sentToday      Int          @default(0)
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaigns      Campaign[]
+
+  @@index([organizationId])
+}
+
+model Campaign {
+  id             String         @id @default(uuid())
+  organizationId String
+  createdById    String
+  emailAccountId String?
+  name           String
+  status         CampaignStatus @default(DRAFT)
+  dailySendLimit Int            @default(50)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy      User           @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  emailAccount   EmailAccount?  @relation(fields: [emailAccountId], references: [id], onDelete: SetNull)
+
+  steps          SequenceStep[]
+  leads          Lead[]
+  messages       OutboundMessage[]
+
+  @@index([organizationId])
+  @@index([createdById])
+}
+
+model SequenceStep {
+  id         String      @id @default(uuid())
+  campaignId String
+  order      Int
+  channel    ChannelType @default(EMAIL)
+  delayDays  Int         @default(0)
+  subject    String?     @db.VarChar(500)
+  body       String      @db.Text
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  campaign   Campaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+}
+
+model Lead {
+  id             String       @id @default(uuid())
+  organizationId String
+  campaignId     String?
+  firstName      String
+  lastName       String
+  email          String
+  phone          String?
+  title          String?
+  companyName    String
+  companyDomain  String?
+  industry       String?
+  linkedinUrl    String?
+  status         LeadStatus   @default(NEW)
+  enriched       Boolean      @default(false)
+  score          Int          @default(50)
+  customFields   Json?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaign       Campaign?    @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  messages       OutboundMessage[]
+
+  @@unique([organizationId, email])
+  @@index([organizationId])
+  @@index([campaignId])
+  @@index([status])
+}
+
+model OutboundMessage {
+  id             String        @id @default(uuid())
+  campaignId     String
+  leadId         String
+  stepOrder      Int           @default(1)
+  channel        ChannelType   @default(EMAIL)
+  status         MessageStatus @default(QUEUED)
+  subject        String?       @db.VarChar(500)
+  body           String        @db.Text
+  trackingId     String        @unique @default(uuid())
+  openedAt       DateTime?
+  clickedAt      DateTime?
+  repliedAt      DateTime?
+  sentAt         DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  campaign       Campaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  lead           Lead          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@index([leadId])
+  @@index([status])
+}
+
